@@ -14,6 +14,7 @@ library(lubridate)
 library(av)
 library(aws.s3)
 library(plotly)
+library(ggforce)
 
 
 options(shiny.sanitize.errors = TRUE)      # Sanitize errors
@@ -159,7 +160,7 @@ server <- function(input, output, session) {
       shinyjs::alert("Invalid username or password!")
     }
   })
-  
+
   
   ####################################### Game Charter ########################################
   
@@ -168,6 +169,8 @@ server <- function(input, output, session) {
   output$GCState <- renderText({
     GCState()
   })
+  
+  
   
   output$setUp <- renderUI({
     
@@ -246,6 +249,9 @@ server <- function(input, output, session) {
       )
     }
   })
+
+ 
+  
   
   gameValues <- reactiveValues(
     HOME_1 = 0,
@@ -321,93 +327,73 @@ server <- function(input, output, session) {
     
     if(GCState() == "charting"){
       tagList(
-        radioButtons("eventType", "Shot or Rebound", choices = c("Shot", "Rebound"), inline = TRUE),
-        radioButtons("eventPerson", "Shooter/Rebounder", choices = on_court(), inline = TRUE),
-        conditionalPanel("input.eventType == 'Shot'",  # Use 'input.' prefix
-                         radioButtons("dbocShot", "Catch or Dribble", choices = c("Dribble", "Catch"), inline = TRUE)),
-        conditionalPanel("input.eventType == 'Rebound'",  # Use 'input.' prefix
-                         radioButtons("offOrDefRebound", "Offense or Defense", choices = c("Offense", "Defense"), inline = TRUE)),
-        plotOutput("court", click = "courtClick")
+        radioButtons("eventType", "Shot", choices = c("Shot")),
+        radioButtons("eventPerson", "Shooter", choices = on_court(), inline = TRUE),
+        plotOutput("court", click = "courtClick"),
+        # Conditional UI for Shot events
+        conditionalPanel(
+          condition = "input.eventType == 'Shot'",
+          radioButtons("shotOutcome", "Outcome of Shot", choices = c("Made Shot", "Missed Shot"))
+        ),
+        
+        # Conditional UI for Missed Shot events
+        conditionalPanel(
+          condition = "input.eventType == 'Shot' && input.shotOutcome == 'Missed Shot'",
+          h4("Who rebounded the missed shot?"),
+          radioButtons("reboundPlayer", "Rebounder", choices = on_court(), inline = TRUE),
+          radioButtons("reboundOutcome", "Rebound Outcome", 
+                       choices = c("Offensive Rebound", "Defensive Rebound"))
+        
+        )
       )
     }
   })
   
-
   
-  
+  #output$court <- renderPlot({
+    #par(mai = c(0, 0, 0, 0))
+    #plot(1, ylim = c(-30, 30), xlim = c(-50, -50), type = 'n', yaxs = 'i', xaxs = 'i', ylab = '', xlab = '', axes = F, asp = 1)
+    #rect(xleft = -47, ybottom = -25,
+     #    xright = 47, ytop = 25,
+      #   border = "black", lwd = 2)
+   # segments(0, -25, 0, 25, col = "black", lwd = 2)
+   
+   # Plot the court in your renderPlot
   output$court <- renderPlot({
-    par(mai = c(0, 0, 0, 0))
-    plot(1, ylim = c(-30, 30), xlim = c(-50, 50), type = 'n', yaxs = 'i', xaxs = 'i', ylab = '', xlab = '', axes = F, asp = 1)
-    
-    #out of bounds
-    rect(xleft = -47, ybottom = -25,
-         xright = 47, ytop = 25,
-         border = "black", lwd = 2)
-    
-    #half-court line
-    segments(0, -25, 0, 25, col = "black", lwd = 2)
-    
-    #center circle
-    symbols(x = 0, y = 0, circles = 6, inches = FALSE, add = TRUE, fg = "black", lwd = 2)
-    
-    #backboard
-    segments(-43,3,-43,-3, col = "black", lwd = 2)
-    segments(43,3,43,-3, col = "black", lwd = 2)
-    
-    #paint
-    rect(-47, -7.5, -28, 7.5, border = "black", lwd = 2)
-    rect(28, -7.5, 47, 7.5, border = "black", lwd = 2)
-    
-    #free throw cirlces
-    curve(sqrt(6^2 - (x + 28)^2), from = -28, to = -22, add = TRUE, col = "black", lwd = 2)
-    curve(-sqrt(6^2 - (x + 28)^2), from = -28, to = -22, add = TRUE, col = "black", lwd = 2)
-    curve(sqrt(6^2 - (x - 28)^2), from = 22, to = 28, add = TRUE, col = "black", lwd = 2)
-    curve(-sqrt(6^2 - (x - 28)^2), from = 22, to = 28, add = TRUE, col = "black", lwd = 2)
-    
-    #hoops
-    symbols(x = -41.75, y = 0, circles = 1.5/2, inches = FALSE, add = TRUE, fg = "black", lwd = 2)  # Left hoop
-    symbols(x = 41.75, y = 0, circles = 1.5/2, inches = FALSE, add = TRUE, fg = "black", lwd = 2)   # Right hoop
-    
-    
-    #3pt lines
-    segments(-47, -21.65625, -37, -21.65625, col = "black", lwd = 2)
-    segments(-47, 21.65625, -37, 21.65625, col = "black", lwd = 2)
-    
-    segments(47, -21.65625, 37, -21.65625, col = "black", lwd = 2)
-    segments(47, 21.65625, 37, 21.65625, col = "black", lwd =2)
-    
-    #3pt arcs
-    curve(sqrt(22.14583^2 - (x + 41.75)^2), from = -37, to = -19.60417, add = TRUE, col = "black", lwd = 2)
-    curve(-sqrt(22.14583^2 - (x + 41.75)^2), from = -37, to = -19.60417, add = TRUE, col = "black", lwd = 2)
-    
-    curve(sqrt(22.14583^2 - (x - 41.75)^2), from = 37, to = 19.60417, add = TRUE, col = "black", lwd = 2)
-    curve(-sqrt(22.14583^2 - (x - 41.75)^2), from = 37, to = 19.60417, add = TRUE, col = "black", lwd = 2)
-    
-    #Event Locs
-    if (!is.null(GCCourtPoint$temp_court$x)) {
-      points(GCCourtPoint$temp_court$x, GCCourtPoint$temp_court$y, col = "green", pch = ifelse(input$eventType == "Shot",19,15), cex = 1.5)
-    }
-    
-    if (!is.null(GCCourtPoint$permanent$x)) {
-      points(GCCourtPoint$permanent$x, GCCourtPoint$permanent$y, col = "red", pch = ifelse(GCCourtPoint$permanent$event == "Shot",19,15), cex = 1.5)
-    }
-    
-    
-  }, bg = "transparent")
-    
-  
-  GCCourtPoint <- reactiveValues(
-    temp_court = data.frame(x = numeric(0), y = numeric(0)),
-    permanent = data.frame(x = numeric(0), y = numeric(0), event = NULL)
-  )
-  
-  observeEvent(input$courtClick,{
-    x <- input$courtClick$x
-    y <- input$courtClick$y
-    new_point <- data.frame(x = x, y = y)
-    GCCourtPoint$temp_court <- new_point
-  })
-    
+    ggplot(data=data.frame(x=1,y=1),aes(x,y))+
+      #outside box:
+      geom_path(data=data.frame(x=c(-47,47,47,-47,-47),y=c(-25,-25,25,25,-25)))+
+      #halfcourt line:
+      geom_path(data=data.frame(x=c(0,0),y=c(-25,25)))+
+      #halfcourt semicircle
+      geom_path(data=data.frame(x=c(-6000:(-1)/1000,1:6000/1000),y=c(sqrt(6^2-c(-6000:(-1)/1000,1:6000/1000)^2))),aes(x=x,y=y))+
+      geom_path(data=data.frame(x=c(-6000:(-1)/1000,1:6000/1000),y=-c(sqrt(6^2-c(-6000:(-1)/1000,1:6000/1000)^2))),aes(x=x,y=y))+
+      #solid FT semicircle above FT line
+      geom_path(data=data.frame(y=c(-6000:(-1)/1000,1:6000/1000),x=c(28-sqrt(6^2-c(-6000:(-1)/1000,1:6000/1000)^2))),aes(x=x,y=y))+
+      geom_path(data=data.frame(y=c(-6000:(-1)/1000,1:6000/1000),x=-c(28-sqrt(6^2-c(-6000:(-1)/1000,1:6000/1000)^2))),aes(x=x,y=y))+
+      #dashed FT semicircle below FT line
+      geom_path(data=data.frame(y=c(-6000:(-1)/1000,1:6000/1000),x=c(28+sqrt(6^2-c(-6000:(-1)/1000,1:6000/1000)^2))),aes(x=x,y=y),linetype='dashed')+
+      geom_path(data=data.frame(y=c(-6000:(-1)/1000,1:6000/1000),x=-c(28+sqrt(6^2-c(-6000:(-1)/1000,1:6000/1000)^2))),aes(x=x,y=y),linetype='dashed')+
+      #key
+      geom_path(data=data.frame(y=c(-8,-8,8,8,-8),x=c(47,28,28,47,47)))+
+      geom_path(data=data.frame(y=-c(-8,-8,8,8,-8),x=-c(47,28,28,47,47)))+
+      #box inside the key
+      geom_path(data=data.frame(y=c(-6,-6,6,6,-6),x=c(47,28,28,47,47)))+
+      geom_path(data=data.frame(y=c(-6,-6,6,6,-6),x=-c(47,28,28,47,47)))+
+      #restricted area semicircle
+      geom_path(data=data.frame(y=c(-4000:(-1)/1000,1:4000/1000),x=c(41.25-sqrt(4^2-c(-4000:(-1)/1000,1:4000/1000)^2))),aes(x=x,y=y))+
+      geom_path(data=data.frame(y=c(-4000:(-1)/1000,1:4000/1000),x=-c(41.25-sqrt(4^2-c(-4000:(-1)/1000,1:4000/1000)^2))),aes(x=x,y=y))+
+      #rim
+      geom_path(data=data.frame(y=c(-750:(-1)/1000,1:750/1000,750:1/1000,-1:-750/1000),x=c(c(41.75+sqrt(0.75^2-c(-750:(-1)/1000,1:750/1000)^2)),c(41.75-sqrt(0.75^2-c(750:1/1000,-1:-750/1000)^2)))),aes(x=x,y=y))+
+      geom_path(data=data.frame(y=c(-750:(-1)/1000,1:750/1000,750:1/1000,-1:-750/1000),x=-c(c(41.75+sqrt(0.75^2-c(-750:(-1)/1000,1:750/1000)^2)),c(41.75-sqrt(0.75^2-c(750:1/1000,-1:-750/1000)^2)))),aes(x=x,y=y))+
+      #backboard
+      geom_path(data=data.frame(y=c(-3,3),x=c(43,43)),lineend='butt')+
+      geom_path(data=data.frame(y=c(-3,3),x=-c(43,43)),lineend='butt')+
+      #three-point line
+      geom_path(data=data.frame(y=c(-22,-22,-22000:(-1)/1000,1:22000/1000,22,22),x=c(47,47-169/12,41.75-sqrt(23.75^2-c(-22000:(-1)/1000,1:22000/1000)^2),47-169/12,47)),aes(x=x,y=y))+
+      geom_path(data=data.frame(y=c(-22,-22,-22000:(-1)/1000,1:22000/1000,22,22),x=-c(47,47-169/12,41.75-sqrt(23.75^2-c(-22000:(-1)/1000,1:22000/1000)^2),47-169/12,47)),aes(x=x,y=y))+
+      coord_fixed()
+      })
 }
 
 
