@@ -11,14 +11,15 @@ import psycopg2
 def create_w_basketball_game_chart(cursor):
     w_basketball_game_chart_table_creator = """
         CREATE TABLE IF NOT EXISTS w_basketball_game_chart_T(
-            Event_ID INT,
+            Event_ID SERIAL PRIMARY KEY,
             Event TEXT,
             Event_Person INT,
+            Event_Team TEXT,
             Event_X FLOAT,
             Event_Y FLOAT,
             Event_Distance FLOAT,
             Event_Zone TEXT,
-            Made_Miss INT,
+            Made_Miss TEXT,
             Three_Pt INT,
             Dribble_Catch TEXT,
             FG INT,
