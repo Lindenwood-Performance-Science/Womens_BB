@@ -103,7 +103,9 @@ ui <- fluidPage(
         dashboardSidebar(
           sidebarMenu(
             menuItem("Home", tabName = "home", icon = icon("house")),
-            menuItem("Game Charter", tabName = "gameCharter", icon = icon("basketball"))
+            menuItem("Game Charter", tabName = "gameCharter", icon = icon("basketball")),
+            menuItem("Game Report", tabName = "gameReport", icon = icon("basketball")),
+            menuItem("Player Shot Analysis", tabName = "playerShotAnalysis", icon = icon("bullseye"))
           ),
           tags$style(".sidebar-search-container { display: none; }")
         ),
@@ -130,15 +132,32 @@ ui <- fluidPage(
                     uiOutput("startingLineups"),
                     uiOutput("charting"),
                     uiOutput("edit")
+            ),
+            
+            tabItem(tabName = "gameReport",
+                    fluidPage(
+                      titlePanel("Game Report"),
+                      selectInput("games", "Select Game", choices = NULL),
+                      DTOutput("gameReportTable")
+                    )
+            ),
+            tabItem(tabName = "playerShotAnalysis",
+                    fluidPage(
+                      titlePanel("Player Shot Analysis"),
+                      selectInput("selected_game", "Select Game", choices = NULL),
+                      fluidRow(
+                        column(6, selectInput("playerName", "Select Player Name", choices = players$name)),
+                        column(6, selectInput("shotType", "Select Shot Type", choices = c("All Shots", "Off the Dribble", "Off the Catch")))
+                      ),
+                      ),
+                      plotOutput("playerCourt")
+                    )
             )
-            
-            
-            
           )
         )
       )
   )
-)
+
 
 # Server logic
 server <- function(input, output, session) {
@@ -161,8 +180,7 @@ server <- function(input, output, session) {
   })
   
   
-  ####################################### Game Charter ########################################
-  
+  ####################################### GAME CHARTER ########################################
   GCState <- reactiveVal("SetUP")
   
   output$GCState <- renderText({
@@ -222,23 +240,23 @@ server <- function(input, output, session) {
       tagList(
         fluidRow(
           column(3, selectInput("LU_1", "Lindenwood 1", choices = players$number)),
-          column(3, numericInput("Oppo_1", "Opposing Team 1", value = 0))
+          column(3, textInput("Oppo_1", "Opposing Team 1", value = 0))
         ),
         fluidRow(
           column(3, selectInput("LU_2", "Lindenwood 2", choices = players$number)),
-          column(3, numericInput("Oppo_2", "Opposing Team 2", value = 0))
+          column(3, textInput("Oppo_2", "Opposing Team 2", value = 0))
         ),
         fluidRow(
           column(3, selectInput("LU_3", "Lindenwood 3", choices = players$number)),
-          column(3, numericInput("Oppo_3", "Opposing Team 3", value = 0))
+          column(3, textInput("Oppo_3", "Opposing Team 3", value = 0))
         ),
         fluidRow(
           column(3, selectInput("LU_4", "Lindenwood 4", choices = players$number)),
-          column(3, numericInput("Oppo_4", "Opposing Team 4", value = 0))
+          column(3, textInput("Oppo_4", "Opposing Team 4", value = 0))
         ),
         fluidRow(
           column(3, selectInput("LU_5", "Lindenwood 5", choices = players$number)),
-          column(3, numericInput("Oppo_5", "Opposing Team 5", value = 0))
+          column(3, textInput("Oppo_5", "Opposing Team 5", value = 0))
         ),
         
         actionButton("startGame", "Start Game")
@@ -297,7 +315,7 @@ server <- function(input, output, session) {
     gameValues$opponent <- input$oppo
     gameValues$date <- input$gameDate
     gameValues$home_away <- input$H_A
-    gameValues$quarter <- 1  # Starting with quarter 1
+    gameValues$quarter <- 1  # Starting with first quarter
     
     
   })
@@ -404,9 +422,7 @@ server <- function(input, output, session) {
     curve(sqrt(22.14583^2 - (x - 41.75)^2), from = 37, to = 19.60417, add = TRUE, col = "black", lwd = 2)
     curve(-sqrt(22.14583^2 - (x - 41.75)^2), from = 37, to = 19.60417, add = TRUE, col = "black", lwd = 2)
     
-    
-   
-    # Event Locs
+    #Event Locs
     if (!is.null(GCCourtPoint$temp_court$x)) {
       points(
         GCCourtPoint$temp_court$x,
@@ -429,74 +445,75 @@ server <- function(input, output, session) {
   }, bg = "transparent")
   
   
+  
   observeEvent(input$submitBtn, {
     # Check if temporary points exist
-  if (nrow(GCCourtPoint$temp_court) == 0) {
-    showNotification("Error: No event location selected on the court.", type = "error", duration = 3)
-    return()
-  }
-  
-  # Check if necessary inputs are selected based on event type
-  if (is.null(input$eventType)) {
-    showNotification("Error: Please select an event type (Shot, Rebound, Free Throw).", type = "error", duration = 3)
-    return()
-  }
-  
-  if (is.null(input$eventPerson)) {
-    showNotification("Error: Please select the Shooter/Rebounder.", type = "error", duration = 3)
-    return()
-  }
-  
-  if (input$eventType == "Shot") {
-    if (is.null(input$shotOutcomeShot)) {
-      showNotification("Error: Please select Shot Outcome (Make or Miss).", type = "error", duration = 3)
+    if (nrow(GCCourtPoint$temp_court) == 0) {
+      showNotification("Error: No event location selected on the court.", type = "error", duration = 3)
       return()
     }
-    if (is.null(input$dbocShot)) {
-      showNotification("Error: Please select Shot Type (Catch or Dribble).", type = "error", duration = 3)
-      return()
-    }
-  } else if (input$eventType == "Rebound") {
-    if (is.null(input$offOrDefRebound)) {
-      showNotification("Error: Please select Offensive or Defensive rebound.", type = "error", duration = 3)
-      return()
-    }
-  } else if (input$eventType == "Free Throw") {
-    if (is.null(input$shotOutcomeFT)) {
-      showNotification("Error: Please select Free Throw Outcome (Make or Miss).", type = "error", duration = 3)
-      return()
-    }
-  }
     
-      print("IN")
-      playerID <- input$eventPerson
-      eventX <- round(GCCourtPoint$temp_court$x, 2)
-      eventY <- round(GCCourtPoint$temp_court$y, 2)
-      Time <- format(Sys.time(), tz = "America/Chicago")
-      
-      
-      # Clear the temporary points after submitting
-      GCCourtPoint$temp_court <- data.frame(x = numeric(0), y = numeric(0))
-      
-      if (eventX > 0){
-        distance <- ((eventX-41.75)^2 + (eventY)^2)^0.5
-      } else {
-        distance <- ((eventX+41.75)^2 + (eventY)^2)^0.5
+    # Check if necessary inputs are selected based on event type
+    if (is.null(input$eventType)) {
+      showNotification("Error: Please select an event type (Shot, Rebound, Free Throw).", type = "error", duration = 3)
+      return()
+    }
+    
+    if (is.null(input$eventPerson)) {
+      showNotification("Error: Please select the Shooter/Rebounder.", type = "error", duration = 3)
+      return()
+    }
+    
+    if (input$eventType == "Shot") {
+      if (is.null(input$shotOutcomeShot) || is.null(input$dbocShot)) {
+        showNotification("Error: Please select both Shot Outcome and Catch/Dribble.", type = "error", duration = 3)
+        return()
       }
-      
-      
-      print(distance)
-      event<-input$eventType
-      
-      con <- dbConnect(RPostgres::Postgres(),
-                       dbname = "ps1",
-                       user = "pythoncon",
-                       password = "password",
-                       host = "18.217.248.114",
-                       port = "5432")
-      
-      shotCategory <- "FG"
-      
+    } else if (input$eventType == "Rebound") {
+      if (is.null(input$offOrDefRebound)) {
+        showNotification("Error: Please select Offensive or Defensive rebound.", type = "error", duration = 3)
+        return()
+      }
+    } else if (input$eventType == "Free Throw") {
+      if (is.null(input$shotOutcomeFT)) {
+        showNotification("Error: Please select Make or Miss for Free Throw.", type = "error", duration = 3)
+        return()
+      }
+    }
+    # Validate input
+    if (is.null(input$eventType) || is.null(input$eventPerson)) {
+      showNotification("Please complete all fields before submitting.", type = "error", duration = 3)
+      return()
+    }
+    
+    playerID <- input$eventPerson
+    event_team <- ifelse(playerID %in% c(gameValues$HOME_1, gameValues$HOME_2, gameValues$HOME_3, gameValues$HOME_4, gameValues$HOME_5), "Lindenwood", "Opponent")
+    print("IN")
+    eventX <- round(GCCourtPoint$temp_court$x, 2)
+    eventY <- round(GCCourtPoint$temp_court$y, 2)
+    Time <- format(Sys.time(), tz = "America/Chicago")
+    
+    # Clear the temporary points after submitting
+    GCCourtPoint$temp_court <- data.frame(x = numeric(0), y = numeric(0))
+    
+    if (eventX > 0){
+      distance <- ((eventX-41.75)^2 + (eventY)^2)^0.5
+    } else {
+      distance <- ((eventX+41.75)^2 + (eventY)^2)^0.5
+    }
+    
+    
+    print(distance)
+    event<-input$eventType
+    
+    con <- dbConnect(RPostgres::Postgres(),
+                     dbname = "ps1",
+                     user = "pythoncon",
+                     password = "password",
+                     host = "18.217.248.114",
+                     port = "5432")
+    
+    shotCategory <- "FG"
     tryCatch({
       if (event == "Shot") {
         shotResult <- input$shotOutcomeShot
@@ -559,12 +576,12 @@ server <- function(input, output, session) {
     INSERT INTO w_basketball_game_chart_t(
       event, event_person, event_x, event_y, event_distance, event_zone, made_miss, free_throw, three_pt, dribble_catch, fg, 
       h1, h2, h3, h4, h5, a1, a2, a3, a4, a5, 
-      game_date, opponent, home_away, quarter, time_of_day)
+      game_date, opponent, home_away, quarter, time_of_day, event_team)
     
     VALUES(
       'Shot', '{playerID}', {eventX}, {eventY}, {distance}, '{shot_zone}', '{shotResult}', '{ftValue}', {shotTypeValue}, '{shotType}', {fgTypeValue},
-      {gameValues$HOME_1}, {gameValues$HOME_2}, {gameValues$HOME_3}, {gameValues$HOME_4}, {gameValues$HOME_5}, {gameValues$AWAY_1}, {gameValues$AWAY_2}, {gameValues$AWAY_3}, {gameValues$AWAY_4}, {gameValues$AWAY_5},
-      '{gameValues$date}', '{gameValues$opponent}', '{gameValues$home_away}', {gameValues$quarter}, '{Time}'
+      {gameValues$HOME_1}, {gameValues$HOME_2}, {gameValues$HOME_3}, {gameValues$HOME_4}, {gameValues$HOME_5}, '{gameValues$AWAY_1}', '{gameValues$AWAY_2}', '{gameValues$AWAY_3}', '{gameValues$AWAY_4}', '{gameValues$AWAY_5}',
+      '{gameValues$date}', '{gameValues$opponent}', '{gameValues$home_away}', {gameValues$quarter}, '{Time}', '{event_team}'
     )
     "
         )
@@ -632,12 +649,12 @@ server <- function(input, output, session) {
     INSERT INTO w_basketball_game_chart_t(
       event, event_person, event_x, event_y, event_distance, event_zone, off_def, shot_recovery_zone, 
       h1, h2, h3, h4, h5, a1, a2, a3, a4, a5, 
-      game_date, opponent, home_away, quarter, time_of_day)
+      game_date, opponent, home_away, quarter, time_of_day, event_team)
     
     VALUES(
       'Rebound', '{playerID}', {eventX}, {eventY}, {distance}, '{rebound_zone}', '{reboundResult}', '{recovery_zone}',
-      {gameValues$HOME_1}, {gameValues$HOME_2}, {gameValues$HOME_3}, {gameValues$HOME_4}, {gameValues$HOME_5}, {gameValues$AWAY_1}, {gameValues$AWAY_2}, {gameValues$AWAY_3}, {gameValues$AWAY_4}, {gameValues$AWAY_5},
-      '{gameValues$date}', '{gameValues$opponent}', '{gameValues$home_away}', {gameValues$quarter}, '{Time}'
+      {gameValues$HOME_1}, {gameValues$HOME_2}, {gameValues$HOME_3}, {gameValues$HOME_4}, {gameValues$HOME_5}, '{gameValues$AWAY_1}', '{gameValues$AWAY_2}', '{gameValues$AWAY_3}', '{gameValues$AWAY_4}', '{gameValues$AWAY_5}',
+      '{gameValues$date}', '{gameValues$opponent}', '{gameValues$home_away}', {gameValues$quarter}, '{Time}', '{event_team}'
     )
     "
         )
@@ -670,12 +687,12 @@ server <- function(input, output, session) {
     INSERT INTO w_basketball_game_chart_t(
       event, event_person, event_x, event_y, event_distance, made_miss, free_throw, three_pt, fg, 
       h1, h2, h3, h4, h5, a1, a2, a3, a4, a5, 
-      game_date, opponent, home_away, quarter, time_of_day)
+      game_date, opponent, home_away, quarter, time_of_day, event_team)
     
     VALUES(
       'Free Throw', '{playerID}', {eventX}, {eventY}, {distance}, '{ftResult}', '{ftValue}', {shotTypeValue}, {fgTypeValue},
-      {gameValues$HOME_1}, {gameValues$HOME_2}, {gameValues$HOME_3}, {gameValues$HOME_4}, {gameValues$HOME_5}, {gameValues$AWAY_1}, {gameValues$AWAY_2}, {gameValues$AWAY_3}, {gameValues$AWAY_4}, {gameValues$AWAY_5},
-      '{gameValues$date}', '{gameValues$opponent}', '{gameValues$home_away}', {gameValues$quarter}, '{Time}'
+      {gameValues$HOME_1}, {gameValues$HOME_2}, {gameValues$HOME_3}, {gameValues$HOME_4}, {gameValues$HOME_5}, '{gameValues$AWAY_1}', '{gameValues$AWAY_2}', '{gameValues$AWAY_3}', '{gameValues$AWAY_4}', '{gameValues$AWAY_5}',
+      '{gameValues$date}', '{gameValues$opponent}', '{gameValues$home_away}', {gameValues$quarter}, '{Time}', '{event_team}'
     )
     "
         )
@@ -713,31 +730,31 @@ server <- function(input, output, session) {
         column(6, 
                selectInput("editHome1", "Home Player 1", choices = players$number, selected = gameValues$HOME_1)),
         column(6, 
-               numericInput("editAway1", "Away Player 1", value = gameValues$AWAY_1, min = 0, step = 1))
+               textInput("editAway1", "Away Player 1", value = gameValues$AWAY_1))
       ),
       fluidRow(
         column(6, 
                selectInput("editHome2", "Home Player 2", choices = players$number, selected = gameValues$HOME_2)),
         column(6, 
-               numericInput("editAway2", "Away Player 2", value = gameValues$AWAY_2, min = 0, step = 1))
+               textInput("editAway2", "Away Player 2", value = gameValues$AWAY_2))
       ),
       fluidRow(
         column(6, 
                selectInput("editHome3", "Home Player 3", choices = players$number, selected = gameValues$HOME_3)),
         column(6, 
-               numericInput("editAway3", "Away Player 3", value = gameValues$AWAY_3, min = 0, step = 1))
+               textInput("editAway3", "Away Player 3", value = gameValues$AWAY_3))
       ),
       fluidRow(
         column(6, 
                selectInput("editHome4", "Home Player 4", choices = players$number, selected = gameValues$HOME_4)),
         column(6, 
-               numericInput("editAway4", "Away Player 4", value = gameValues$AWAY_4, min = 0, step = 1))
+               textInput("editAway4", "Away Player 4", value = gameValues$AWAY_4))
       ),
       fluidRow(
         column(6, 
                selectInput("editHome5", "Home Player 5", choices = players$number, selected = gameValues$HOME_5)),
         column(6, 
-               numericInput("editAway5", "Away Player 5", value = gameValues$AWAY_5, min = 0, step = 1))
+               textInput("editAway5", "Away Player 5", value = gameValues$AWAY_5))
       ),
       fluidRow(
         column(6, 
@@ -750,27 +767,336 @@ server <- function(input, output, session) {
     ))
   })
   
-  
-  
   observeEvent(input$saveChanges, {
-      gameValues$HOME_1 <- input$editHome1
-      gameValues$HOME_2 <- input$editHome2
-      gameValues$HOME_3 <- input$editHome3
-      gameValues$HOME_4 <- input$editHome4
-      gameValues$HOME_5 <- input$editHome5
-      gameValues$AWAY_1 <- input$editAway1
-      gameValues$AWAY_2 <- input$editAway2
-      gameValues$AWAY_3 <- input$editAway3
-      gameValues$AWAY_4 <- input$editAway4
-      gameValues$AWAY_5 <- input$editAway5
-      gameValues$quarter <- input$editQuarter
-      
-      # Close the modal
-      removeModal()
+    gameValues$HOME_1 <- input$editHome1
+    gameValues$HOME_2 <- input$editHome2
+    gameValues$HOME_3 <- input$editHome3
+    gameValues$HOME_4 <- input$editHome4
+    gameValues$HOME_5 <- input$editHome5
+    gameValues$AWAY_1 <- input$editAway1
+    gameValues$AWAY_2 <- input$editAway2
+    gameValues$AWAY_3 <- input$editAway3
+    gameValues$AWAY_4 <- input$editAway4
+    gameValues$AWAY_5 <- input$editAway5
+    gameValues$quarter <- input$editQuarter
+    
+    # Close the modal
+    removeModal()
   })
   
+  ####################################### GAME REPORTS #################################################
+  # Reactive function to fetch unique game data
+  unique_games <- reactive({
+    con <- dbConnect(RPostgres::Postgres(),
+                     dbname = "ps1",
+                     user = "pythoncon",
+                     password = "password",
+                     host = "18.217.248.114",
+                     port = "5432")
+    query <- "SELECT DISTINCT game_date, opponent FROM w_basketball_game_chart_t"
+    df <- dbGetQuery(con, query)
+    dbDisconnect(con)
+    df
+  })
+  
+  # Drop down menu for games
+  observe({
+    game_data <- unique_games()  # Get the list of available games
+    game_choices <- paste(game_data$game_date, "vs", game_data$opponent)  
+    updateSelectInput(session, 'games', choices = game_choices)
+  })
+  
+  # Render the game report table based on the selected game
+  output$gameReportTable <- DT::renderDataTable({
+    req(input$games)  # Ensure a game is selected
+    
+    # Extract selected date and opponent
+    game_info <- strsplit(input$games, " vs ", fixed = TRUE)[[1]]
+    date <- game_info[1]
+    opponent <- game_info[2]
+    
+    # Connect to database
+    con <- dbConnect(RPostgres::Postgres(),
+                     dbname = "ps1",
+                     user = "pythoncon",
+                     password = "password",
+                     host = "18.217.248.114",
+                     port = "5432")
+    
+    date <- dbQuoteLiteral(con, date) 
+    opponent <- dbQuoteLiteral(con, opponent)
+    
+    
+    # Query player data with proper team filtering
+    query_players <- glue::glue("
+      SELECT event_person AS Player, 
+          SUM(CASE WHEN event = 'Shot' AND made_miss = 'Make' THEN 1 ELSE 0 END) AS FieldGoalsMade, 
+            SUM(CASE WHEN event = 'Shot' AND made_miss = 'Miss' THEN 1 ELSE 0 END) AS FieldGoalsMissed,
+            SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END) AS FieldGoalAttempts,
+            ROUND(CASE WHEN SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END) > 0 
+                  THEN (SUM(CASE WHEN event = 'Shot' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0) / 
+                  NULLIF(SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END), 0) ELSE 0 END, 2) AS FieldGoalPercentage,
+            SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) AS ThreePtMade,
+            SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Miss' THEN 1 ELSE 0 END) AS ThreePtMissed,
+            ROUND(CASE  WHEN SUM(CASE WHEN Three_Pt = 1 THEN 1 ELSE 0 END) > 0 
+                  THEN (SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0) / 
+                  NULLIF(SUM(CASE WHEN Three_Pt = 1 THEN 1 ELSE 0 END), 0) ELSE 0 END, 2) AS ThreePtPercentage,
+            ROUND(CASE WHEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' THEN 1 ELSE 0 END)) > 0
+                  THEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' THEN 1 ELSE 0 END), 0)) ELSE 0 END, 2) AS ShotsOffDribblePercentage,
+            ROUND(CASE WHEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' THEN 1 ELSE 0 END)) > 0
+                  THEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' THEN 1 ELSE 0 END), 0)) ELSE 0 END, 2) AS ShotsOffCatchPercentage,
+            SUM(CASE WHEN event = 'Rebound' AND off_def = 'Offensive' THEN 1 ELSE 0 END) AS OffensiveRebounds,
+            SUM(CASE WHEN event = 'Rebound' AND off_def = 'Defensive' THEN 1 ELSE 0 END) AS DefensiveRebounds,
+            ROUND(CASE WHEN SUM(CASE WHEN Free_Throw = 1 THEN 1 END) > 0
+                  THEN (SUM(CASE WHEN Free_Throw = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN Free_Throw = 1 THEN 1 END), 0)) ELSE 0 END, 2) AS FreeThrowPercentage
+      FROM w_basketball_game_chart_t
+      WHERE game_date = {date} AND opponent = {opponent} AND (event_team = 'Lindenwood' OR event_team IS NULL)
+      GROUP BY event_person
+")
+    # Get player data
+    df_players <- dbGetQuery(con, query_players)
+    
+    # Query for team data
+    query_team <- glue::glue("
+      SELECT 'Team Totals' AS Player, 
+            SUM(CASE WHEN event = 'Shot' AND made_miss = 'Make' THEN 1 ELSE 0 END) AS FieldGoalsMade, 
+            SUM(CASE WHEN event = 'Shot' AND made_miss = 'Miss' THEN 1 ELSE 0 END) AS FieldGoalsMissed,
+            SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END) AS FieldGoalAttempts,
+            ROUND(CASE WHEN SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END) > 0 
+                  THEN (SUM(CASE WHEN event = 'Shot' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0) / 
+                  NULLIF(SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END), 0) ELSE 0 END, 2) AS FieldGoalPercentage,
+            SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) AS ThreePtMade,
+            SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Miss' THEN 1 ELSE 0 END) AS ThreePtMissed,
+            ROUND(CASE  WHEN SUM(CASE WHEN Three_Pt = 1 THEN 1 ELSE 0 END) > 0 
+                  THEN (SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0) / 
+                  NULLIF(SUM(CASE WHEN Three_Pt = 1 THEN 1 ELSE 0 END), 0) ELSE 0 END, 2) AS ThreePtPercentage,
+            ROUND(CASE WHEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' THEN 1 ELSE 0 END)) > 0
+                  THEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' THEN 1 ELSE 0 END), 0)) ELSE 0 END, 2) AS ShotsOffDribblePercentage,
+            ROUND(CASE WHEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' THEN 1 ELSE 0 END)) > 0
+                  THEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' THEN 1 ELSE 0 END), 0)) ELSE 0 END, 2) AS ShotsOffCatchPercentage,
+            SUM(CASE WHEN event = 'Rebound' AND off_def = 'Offensive' THEN 1 ELSE 0 END) AS OffensiveRebounds,
+            SUM(CASE WHEN event = 'Rebound' AND off_def = 'Defensive' THEN 1 ELSE 0 END) AS DefensiveRebounds,
+            ROUND(CASE WHEN SUM(CASE WHEN Free_Throw = 1 THEN 1 END) > 0
+                  THEN (SUM(CASE WHEN Free_Throw = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN Free_Throw = 1 THEN 1 END), 0)) ELSE 0 END, 2) AS FreeThrowPercentage
+      FROM w_basketball_game_chart_t
+      WHERE game_date = {date} AND opponent = {opponent} 
+")
+    
+    # Get team data
+    df_team_totals <- dbGetQuery(con, query_team)
+    
+    # Combine player and team data
+    df_report <- rbind(df_players, df_team_totals)
+    
+    # Disconnect from database
+    dbDisconnect(con)
+    
+     # Ensure df_report is a valid data frame
+  if (nrow(df_report) == 0) {
+      return(NULL)  # Avoid rendering an empty table
+  }
+  
+  # Render DataTable and sort by player 
+  DT::datatable(df_report, options = list(
+    pageLength = -1,  # Show all rows
+    dom = 't',  
+    ordering = TRUE, 
+    order = list(list(0, 'asc')),  # Sort by player ascending
+    scrollX = TRUE  # Enable horizontal scrolling
+  ),
+  rownames = FALSE
+  )
+})
+  
+  
+  ####################################### Player Shot Analysis ###############################################
+  # Reactive function to fetch unique games from the database
+  unique_games <- reactive({
+    con <- dbConnect(RPostgres::Postgres(),
+                     dbname = "ps1",
+                     user = "pythoncon",
+                     password = "password",
+                     host = "18.217.248.114",
+                     port = "5432")
+    
+    query <- "SELECT DISTINCT game_date, opponent AS opponent_team FROM w_basketball_game_chart_t ORDER BY game_date"
+    games_df <- dbGetQuery(con, query)
+    dbDisconnect(con)
+    
+    games_df$game_label <- paste(games_df$game_date, "-", games_df$opponent_team)
+    
+    return(games_df)
+  })
+  
+  # Update game selection dropdown
+  observe({
+    game_data <- unique_games()
+    
+    print("Available Games:")
+    print(game_data)
+    
+    game_choices <- if (nrow(game_data) > 0) c("All Games", game_data$game_label) else "All Games"
+    
+    updateSelectInput(session, "selected_game", choices = game_choices, selected = "All Games")
+  })
+  
+  # Reactive function to fetch unique shot types
+  unique_shot <- reactive({
+    con <- dbConnect(RPostgres::Postgres(),
+                     dbname = "ps1",
+                     user = "pythoncon",
+                     password = "password",
+                     host = "18.217.248.114",
+                     port = "5432")
+    
+    query <- "SELECT DISTINCT dribble_catch FROM w_basketball_game_chart_t WHERE event = 'Shot'"
+    shot_df <- dbGetQuery(con, query)
+    dbDisconnect(con)
+    
+    shot_choices <- if (nrow(shot_df) > 0) c("All Shots", shot_df$dribble_catch) else "All Shots"
+    
+    return(shot_choices)
+  })
+  
+  # Update shot type selection dropdown
+  observe({
+    shot_choices <- unique_shot()
+    
+    print("Available Shot Types:")
+    print(shot_choices)
+    
+    updateSelectInput(session, "shotType", choices = shot_choices, selected = "All Shots")
+  })
+  
+  # Reactive function to retrieve shot data based on selected filters
+  get_shot_data <- reactive({
+    req(input$playerName, input$shotType, input$selected_game)
+    
+    shot_type <- input$shotType
+    selected_game <- input$selected_game
+    
+    if (selected_game != "All Games") {
+      selected_game_date <- strsplit(selected_game, " - ")[[1]][1]
+      selected_game_date <- as.Date(selected_game_date, format = "%Y-%m-%d")
+    } else {
+      selected_game_date <- NULL
+    }
+    
+    con <- dbConnect(RPostgres::Postgres(),
+                     dbname = "ps1",
+                     user = "pythoncon",
+                     password = "password",
+                     host = "18.217.248.114",
+                     port = "5432")
+    
+    query <- "
+  SELECT event_person AS number, event_x, event_y, made_miss, game_date, dribble_catch
+  FROM w_basketball_game_chart_t
+  WHERE event = 'Shot'
+  "
+    
+    df_shots <- dbGetQuery(con, query)
+    dbDisconnect(con)
+    
+    # Convert number to numeric to match player dataset
+    df_shots$number <- as.numeric(df_shots$number)
+    
+    
+    df_shots <- df_shots %>%
+      inner_join(players, by = "number") %>%
+      filter(name == input$playerName)
+    
+    # Apply shot type filter correctly
+    if (shot_type == "Off the Dribble") {
+      df_shots <- df_shots %>% filter(tolower(dribble_catch) == "dribble")
+    } else if (shot_type == "Off the Catch") {
+      df_shots <- df_shots %>% filter(tolower(dribble_catch) == "catch")
+    }
+    
+    
+    # Filter by game date if a specific game is selected
+    if (!is.null(selected_game_date)) {
+      df_shots <- df_shots %>% filter(game_date == selected_game_date)
+    }
+    
+    return(df_shots)
+  })
+  
+  # Render the shot analysis court plot
+  output$playerCourt <- renderPlot({
+    # Get shot data for selected player
+    df_shots <- get_shot_data()
+    
+    # If no shots data, return an empty plot
+    if (nrow(df_shots) == 0) {
+      return(plot(1, ylim = c(-30, 30), xlim = c(-50, 50), type = 'n', yaxs = 'i', xaxs = 'i', ylab = '', xlab = '', axes = F, asp = 1))
+    }
+    
+    # Fix made_miss to ensure consistent naming
+    df_shots$made_miss <- factor(df_shots$made_miss, levels = c("Make", "Miss"))
+    
+    # Draw the basketball court using base R plotting
+    par(mai = c(0, 0, 0, 0))
+    plot(1, ylim = c(-30, 30), xlim = c(-50, 50), type = 'n', yaxs = 'i', xaxs = 'i', ylab = '', xlab = '', axes = F, asp = 1)
+    
+    # Out of bounds
+    rect(xleft = -47, ybottom = -25, xright = 47, ytop = 25, border = "black", lwd = 2)
+    
+    # Half-court line
+    segments(0, -25, 0, 25, col = "black", lwd = 2)
+    
+    # Center circle
+    symbols(x = 0, y = 0, circles = 6, inches = FALSE, add = TRUE, fg = "black", lwd = 2)
+    
+    # Backboard
+    segments(-43, 3, -43, -3, col = "black", lwd = 2)
+    segments(43, 3, 43, -3, col = "black", lwd = 2)
+    
+    # Paint area
+    rect(-47, -7.5, -28, 7.5, border = "black", lwd = 2)
+    rect(28, -7.5, 47, 7.5, border = "black", lwd = 2)
+    
+    # Free throw circles
+    curve(sqrt(6^2 - (x + 28)^2), from = -28, to = -22, add = TRUE, col = "black", lwd = 2)
+    curve(-sqrt(6^2 - (x + 28)^2), from = -28, to = -22, add = TRUE, col = "black", lwd = 2)
+    curve(sqrt(6^2 - (x - 28)^2), from = 22, to = 28, add = TRUE, col = "black", lwd = 2)
+    curve(-sqrt(6^2 - (x - 28)^2), from = 22, to = 28, add = TRUE, col = "black", lwd = 2)
+    
+    # Hoops
+    symbols(x = -41.75, y = 0, circles = 1.5/2, inches = FALSE, add = TRUE, fg = "black", lwd = 2)  # Left hoop
+    symbols(x = 41.75, y = 0, circles = 1.5/2, inches = FALSE, add = TRUE, fg = "black", lwd = 2)   # Right hoop
+    
+    # 3-point lines
+    segments(-47, -21.65625, -37, -21.65625, col = "black", lwd = 2)
+    segments(-47, 21.65625, -37, 21.65625, col = "black", lwd = 2)
+    
+    segments(47, -21.65625, 37, -21.65625, col = "black", lwd = 2)
+    segments(47, 21.65625, 37, 21.65625, col = "black", lwd = 2)
+    
+    # 3-point arcs (fix NaNs by limiting the x range)
+    curve(sqrt(22.14583^2 - (x + 41.75)^2), from = -37, to = -19.60417, add = TRUE, col = "black", lwd = 2)
+    curve(-sqrt(22.14583^2 - (x + 41.75)^2), from = -37, to = -19.60417, add = TRUE, col = "black", lwd = 2)
+    
+    curve(sqrt(22.14583^2 - (x - 41.75)^2), from = 37, to = 19.60417, add = TRUE, col = "black", lwd = 2)
+    curve(-sqrt(22.14583^2 - (x - 41.75)^2), from = 37, to = 19.60417, add = TRUE, col = "black", lwd = 2)
+    
+    # Add the shot locations as points on the court
+    points(df_shots$event_x, df_shots$event_y, col = ifelse(df_shots$made_miss == "Make", "green", "red"), pch = 19, cex = 1.5)
+    
+    # Add a legend
+    legend("topright", legend = c("Make", "Miss"), 
+           fill = c("green", "red"), title = "Shot Outcome", bty = "n", cex = 0.8)
+    
+  }, bg = "transparent")
 }
 
 
 # Shiny app
 shinyApp(ui, server)
+
