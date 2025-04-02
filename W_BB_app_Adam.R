@@ -105,7 +105,8 @@ ui <- fluidPage(
             menuItem("Home", tabName = "home", icon = icon("house")),
             menuItem("Game Charter", tabName = "gameCharter", icon = icon("basketball")),
             menuItem("Game Report", tabName = "gameReport", icon = icon("basketball")),
-            menuItem("Player Shot Analysis", tabName = "playerShotAnalysis", icon = icon("bullseye"))
+            menuItem("Lindenwood Shot Analysis", tabName = "LindenwoodShotAnalysis", icon = icon("bullseye")),
+            menuItem("Lindenwood Rebound Analysis", tabName = "LindenwoodReboundAnalysis", icon = icon("basketball"))
           ),
           tags$style(".sidebar-search-container { display: none; }")
         ),
@@ -138,20 +139,55 @@ ui <- fluidPage(
                     fluidPage(
                       titlePanel("Game Report"),
                       selectInput("games", "Select Game", choices = NULL),
-                      DTOutput("gameReportTable")
+                      DTOutput("gameReportTable"), 
+                      br(),
+                      h3("Opponent Report"),  
+                      DTOutput("opponentReportTable") 
                     )
             ),
-            tabItem(tabName = "playerShotAnalysis",
+            tabItem(tabName = "LindenwoodShotAnalysis",
                     fluidPage(
-                      titlePanel("Player Shot Analysis"),
+                      titlePanel("Lindenwood Shot Analysis"),
                       selectInput("selected_game", "Select Game", choices = NULL),
+                      
                       fluidRow(
-                        column(6, selectInput("playerName", "Select Player Name", choices = players$name)),
+                        column(6, selectInput("playerName", "Select Player Name", 
+                                              choices = c("All Players", players$name))),
                         column(6, selectInput("shotType", "Select Shot Type", choices = c("All Shots", "Off the Dribble", "Off the Catch")))
                       ),
-                      ),
-                      plotOutput("playerCourt")
+                      
+                      plotOutput("playerCourt"),  # Basketball court plot
+                      
+                      DTOutput("shootingStatsTable")  # table for shooting percentages
                     )
+            ),
+            tabItem(
+              tabName = "LindenwoodReboundAnalysis",
+              fluidPage(
+                titlePanel("Lindenwood Rebound Analysis"),
+                
+                # Game Selection Input (dynamically populated from the server)
+                uiOutput("selected_game_ui"),  # Dynamic game selection
+                
+                # Select Rebound Type Input
+                selectInput("rebound_type", "Select Rebound Type", 
+                            choices = c("All Rebounds", "Defensive Rebounds", "Offensive Rebounds")),
+                
+                # Player Selection Input (dynamically populated based on selected game)
+                fluidRow(
+                  column(6, 
+                         selectInput("playerName", "Select Player Name", 
+                                     choices = c("All Players", players$name))  # Dynamically populated
+                  )
+                ),
+                
+                # Rebound Court Plot
+                plotOutput("reboundCourt"),
+                
+                # Rebounding Stats Table
+                DTOutput("reboundingStatsTable")
+              )
+            )
             )
           )
         )
@@ -163,8 +199,8 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   # Hardcoded credentials (for demonstration purposes)
   credentials <- reactiveValues(
-    username = "",
-    password = ""
+    username = "Lions",
+    password = "1176"
   )
   
   observeEvent(input$login, {
@@ -913,9 +949,115 @@ server <- function(input, output, session) {
   rownames = FALSE
   )
 })
+  # Render the opponent game report table
+  output$opponentReportTable <- DT::renderDataTable({
+    req(input$games)  # Ensure a game is selected
+    
+    # Extract selected date and opponent
+    game_info <- strsplit(input$games, " vs ", fixed = TRUE)[[1]]
+    date <- game_info[1]
+    opponent <- game_info[2]
+    
+    # Connect to database
+    con <- dbConnect(RPostgres::Postgres(),
+                     dbname = "ps1",
+                     user = "pythoncon",
+                     password = "password",
+                     host = "18.217.248.114",
+                     port = "5432")
+    
+    date <- dbQuoteLiteral(con, date)
+    opponent <- dbQuoteLiteral(con, opponent)
+    
+    # Query opponent player data
+    query_opponent_players <- glue::glue("
+     SELECT event_person AS Player, 
+          SUM(CASE WHEN event = 'Shot' AND made_miss = 'Make' THEN 1 ELSE 0 END) AS FieldGoalsMade, 
+            SUM(CASE WHEN event = 'Shot' AND made_miss = 'Miss' THEN 1 ELSE 0 END) AS FieldGoalsMissed,
+            SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END) AS FieldGoalAttempts,
+            ROUND(CASE WHEN SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END) > 0 
+                  THEN (SUM(CASE WHEN event = 'Shot' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0) / 
+                  NULLIF(SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END), 0) ELSE 0 END, 2) AS FieldGoalPercentage,
+            SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) AS ThreePtMade,
+            SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Miss' THEN 1 ELSE 0 END) AS ThreePtMissed,
+            ROUND(CASE  WHEN SUM(CASE WHEN Three_Pt = 1 THEN 1 ELSE 0 END) > 0 
+                  THEN (SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0) / 
+                  NULLIF(SUM(CASE WHEN Three_Pt = 1 THEN 1 ELSE 0 END), 0) ELSE 0 END, 2) AS ThreePtPercentage,
+            ROUND(CASE WHEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' THEN 1 ELSE 0 END)) > 0
+                  THEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' THEN 1 ELSE 0 END), 0)) ELSE 0 END, 2) AS ShotsOffDribblePercentage,
+            ROUND(CASE WHEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' THEN 1 ELSE 0 END)) > 0
+                  THEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' THEN 1 ELSE 0 END), 0)) ELSE 0 END, 2) AS ShotsOffCatchPercentage,
+            SUM(CASE WHEN event = 'Rebound' AND off_def = 'Offensive' THEN 1 ELSE 0 END) AS OffensiveRebounds,
+            SUM(CASE WHEN event = 'Rebound' AND off_def = 'Defensive' THEN 1 ELSE 0 END) AS DefensiveRebounds,
+            ROUND(CASE WHEN SUM(CASE WHEN Free_Throw = 1 THEN 1 END) > 0
+                  THEN (SUM(CASE WHEN Free_Throw = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN Free_Throw = 1 THEN 1 END), 0)) ELSE 0 END, 2) AS FreeThrowPercentage
+      FROM w_basketball_game_chart_t
+    WHERE game_date = {date} AND opponent = {opponent} AND event_team != 'Lindenwood'
+    GROUP BY event_person
+  ")
+    
+    # Get opponent player data
+    df_opponent_players <- dbGetQuery(con, query_opponent_players)
+    
+    # Query opponent team totals
+    query_opponent_team <- glue::glue("
+     SELECT 'Team Totals' AS Player, 
+            SUM(CASE WHEN event = 'Shot' AND made_miss = 'Make' THEN 1 ELSE 0 END) AS FieldGoalsMade, 
+            SUM(CASE WHEN event = 'Shot' AND made_miss = 'Miss' THEN 1 ELSE 0 END) AS FieldGoalsMissed,
+            SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END) AS FieldGoalAttempts,
+            ROUND(CASE WHEN SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END) > 0 
+                  THEN (SUM(CASE WHEN event = 'Shot' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0) / 
+                  NULLIF(SUM(CASE WHEN Fg = 1 THEN 1 ELSE 0 END), 0) ELSE 0 END, 2) AS FieldGoalPercentage,
+            SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) AS ThreePtMade,
+            SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Miss' THEN 1 ELSE 0 END) AS ThreePtMissed,
+            ROUND(CASE  WHEN SUM(CASE WHEN Three_Pt = 1 THEN 1 ELSE 0 END) > 0 
+                  THEN (SUM(CASE WHEN Three_Pt = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0) / 
+                  NULLIF(SUM(CASE WHEN Three_Pt = 1 THEN 1 ELSE 0 END), 0) ELSE 0 END, 2) AS ThreePtPercentage,
+            ROUND(CASE WHEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' THEN 1 ELSE 0 END)) > 0
+                  THEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Dribble' THEN 1 ELSE 0 END), 0)) ELSE 0 END, 2) AS ShotsOffDribblePercentage,
+            ROUND(CASE WHEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' THEN 1 ELSE 0 END)) > 0
+                  THEN (SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN event = 'Shot' AND dribble_catch = 'Catch' THEN 1 ELSE 0 END), 0)) ELSE 0 END, 2) AS ShotsOffCatchPercentage,
+            SUM(CASE WHEN event = 'Rebound' AND off_def = 'Offensive' THEN 1 ELSE 0 END) AS OffensiveRebounds,
+            SUM(CASE WHEN event = 'Rebound' AND off_def = 'Defensive' THEN 1 ELSE 0 END) AS DefensiveRebounds,
+            ROUND(CASE WHEN SUM(CASE WHEN Free_Throw = 1 THEN 1 END) > 0
+                  THEN (SUM(CASE WHEN Free_Throw = 1 AND made_miss = 'Make' THEN 1 ELSE 0 END) * 100.0 /
+                  NULLIF(SUM(CASE WHEN Free_Throw = 1 THEN 1 END), 0)) ELSE 0 END, 2) AS FreeThrowPercentage
+      FROM w_basketball_game_chart_t
+    WHERE game_date = {date} AND opponent = {opponent} AND event_team != 'Lindenwood'
+  ")
+    
+    # Get opponent team data
+    df_opponent_team <- dbGetQuery(con, query_opponent_team)
+    
+    # Combine opponent player and team data
+    df_opponent_report <- rbind(df_opponent_players, df_opponent_team)
+    
+    # Disconnect from database
+    dbDisconnect(con)
+    
+    # Ensure df_opponent_report is a valid data frame
+    if (nrow(df_opponent_report) == 0) {
+      return(NULL)  # Avoid rendering an empty table
+    }
+    
+    # Render DataTable for opponent report
+    DT::datatable(df_opponent_report, options = list(
+      pageLength = -1,  # Show all rows
+      dom = 't',
+      ordering = TRUE,
+      order = list(list(0, 'asc')),  # Sort by player name
+      scrollX = TRUE  # Enable horizontal scrolling
+    ),
+    rownames = FALSE
+    )
+  })
   
-  
-  ####################################### Player Shot Analysis ###############################################
+  ####################################### LINDENWOOD SHOT ANALYSIS ###############################################
   # Reactive function to fetch unique games from the database
   unique_games <- reactive({
     con <- dbConnect(RPostgres::Postgres(),
@@ -996,7 +1138,7 @@ server <- function(input, output, session) {
                      port = "5432")
     
     query <- "
-  SELECT event_person AS number, event_x, event_y, made_miss, game_date, dribble_catch
+  SELECT event_person AS number, event, event_x, event_y, event_distance, made_miss, game_date, dribble_catch
   FROM w_basketball_game_chart_t
   WHERE event = 'Shot'
   "
@@ -1004,26 +1146,63 @@ server <- function(input, output, session) {
     df_shots <- dbGetQuery(con, query)
     dbDisconnect(con)
     
-    # Convert number to numeric to match player dataset
     df_shots$number <- as.numeric(df_shots$number)
     
-    
+    # Join with players dataset
     df_shots <- df_shots %>%
-      inner_join(players, by = "number") %>%
-      filter(name == input$playerName)
+      inner_join(players, by = "number")
     
-    # Apply shot type filter correctly
-    if (shot_type == "Off the Dribble") {
-      df_shots <- df_shots %>% filter(tolower(dribble_catch) == "dribble")
-    } else if (shot_type == "Off the Catch") {
-      df_shots <- df_shots %>% filter(tolower(dribble_catch) == "catch")
+    # Apply player filter
+    if (input$playerName != "All Players") {
+      df_shots <- df_shots %>% filter(name == input$playerName)
     }
     
+    # Apply shot type filter
+    if (shot_type == "Dribble") {
+      df_shots <- df_shots %>% filter(dribble_catch == "Dribble")
+    } else if (shot_type == "Catch") {
+      df_shots <- df_shots %>% filter(dribble_catch == "Catch")
+    }
     
-    # Filter by game date if a specific game is selected
+    # Filter by game date
     if (!is.null(selected_game_date)) {
       df_shots <- df_shots %>% filter(game_date == selected_game_date)
     }
+    
+    # Calculate shooting percentages for each player
+    player_shooting_data <- df_shots %>%
+      group_by(number) %>%
+      summarize(
+        field_goals_made = sum(made_miss == "Make"),
+        field_goals_attempted = n(),
+        field_goal_percentage = round((field_goals_made / field_goals_attempted) * 100, 2),
+        
+        # 3-point shooting percentage
+        three_point_made = sum(made_miss == "Make" & event_distance > 22), # assuming 22 is 3-point range
+        three_point_attempted = sum(event_distance > 22),
+        three_point_percentage = ifelse(three_point_attempted > 0, round((three_point_made / three_point_attempted) * 100, 2), 0),
+        
+        # Dribble shooting percentage
+        dribble_made = sum(made_miss == "Make" & dribble_catch == "Dribble"),
+        dribble_attempted = sum(dribble_catch == "Dribble"),
+        dribble_percentage = ifelse(dribble_attempted > 0, round((dribble_made / dribble_attempted) * 100, 2), 0),
+        
+        # Catch shooting percentage
+        catch_made = sum(made_miss == "Make" & dribble_catch == "Catch"),
+        catch_attempted = sum(dribble_catch == "Catch"),
+        catch_percentage = ifelse(catch_attempted > 0, round((catch_made / catch_attempted) * 100, 2), 0)
+      )
+    
+    # Join shooting percentages to the shots data
+    df_shots <- df_shots %>%
+      left_join(player_shooting_data, by = "number") %>%
+      mutate(shooting_percentage_label = paste(
+        name, 
+        "FG%:", field_goal_percentage, "%", 
+        "| 3pt%:", three_point_percentage, "%", 
+        "| Shot off Dribble%:", dribble_percentage, "%", 
+        "| Shot off Catch%:", catch_percentage, "%"
+      ))
     
     return(df_shots)
   })
@@ -1089,11 +1268,282 @@ server <- function(input, output, session) {
     # Add the shot locations as points on the court
     points(df_shots$event_x, df_shots$event_y, col = ifelse(df_shots$made_miss == "Make", "green", "red"), pch = 19, cex = 1.5)
     
-    # Add a legend
+    # Add legend for shot outcomes
     legend("topright", legend = c("Make", "Miss"), 
-           fill = c("green", "red"), title = "Shot Outcome", bty = "n", cex = 0.8)
-    
+           fill = c("green", "red"), title = "Shot Outcome", bty = "n", cex = 1.0)
   }, bg = "transparent")
+   
+  #table to shooting percentages
+  output$shootingStatsTable <- renderDT({
+    df_shots <- get_shot_data()  # Fetch shot data from the reactive function
+    
+    if (nrow(df_shots) == 0) return(NULL)
+    
+    # Aggregate shooting statistics per player
+    shooting_stats <- df_shots %>%
+      select(number, name, field_goal_percentage, three_point_percentage, dribble_percentage, catch_percentage) %>%
+      distinct() %>%
+      arrange(number)  # Sort players by player number (ascending)
+    
+    # Check if "All Players" is selected
+    if (input$playerName == "All Players") {
+      # Calculate team averages
+      team_totals <- shooting_stats %>%
+        summarise(
+          number = NA_real_,  # Ensure that 'number' is numeric (NA_real_ is a numeric NA)
+          name = "Team Average",
+          field_goal_percentage = round(mean(field_goal_percentage, na.rm = TRUE), 2),
+          three_point_percentage = round(mean(three_point_percentage, na.rm = TRUE), 2),
+          dribble_percentage = round(mean(dribble_percentage, na.rm = TRUE), 2),
+          catch_percentage = round(mean(catch_percentage, na.rm = TRUE), 2)
+        )
+      
+      # Append team totals to the player statistics
+      shooting_stats <- bind_rows(shooting_stats, team_totals)
+    }
+    
+    # Render the table
+    datatable(shooting_stats, 
+              options = list(dom = 't', 
+                             paging = FALSE, 
+                             searching = FALSE, 
+                             ordering = FALSE), 
+              rownames = FALSE, 
+              colnames = c("Number", "Player", "FG%", "3PT%", "Shot Off Dribble%", "Shot Off Catch%"))  
+  })
+  ####################################### LINDENWOOD REBOUND ANALYSIS ################################################  
+  # Reactive function to fetch unique games from the database
+  unique_games <- reactive({
+    con <- dbConnect(RPostgres::Postgres(),
+                     dbname = "ps1",
+                     user = "pythoncon",
+                     password = "password",
+                     host = "18.217.248.114",
+                     port = "5432")
+    
+    query <- "SELECT DISTINCT game_date, opponent AS opponent_team FROM w_basketball_game_chart_t ORDER BY game_date"
+    games_df <- dbGetQuery(con, query)
+    dbDisconnect(con)
+    
+    games_df$game_label <- paste(games_df$game_date, "-", games_df$opponent_team)
+    
+    return(games_df)
+  })
+  
+  # Render the game selection input dynamically
+  output$selected_game_ui <- renderUI({
+    games_df <- unique_games()
+    
+    if (nrow(games_df) > 0) {
+      game_choices <- games_df$game_label
+      selectInput("selected_game", "Select Game", choices = c("All Games", game_choices))
+    } else {
+      selectInput("selected_game", "Select Game", choices = "No Games Available")
+    }
+  })
+  
+  # Render the player selection input dynamically based on selected game
+  output$selected_player_ui <- renderUI({
+    selected_game <- input$selected_game
+    df_rebounds <- get_rebound_data()
+    
+    if (selected_game != "All Games") {
+      players <- unique(df_rebounds$number)  # Get unique players for selected game
+    } else {
+      players <- unique(df_rebounds$number)  # Get all players
+    }
+    
+    player_choices <- c("All Players", as.character(players))
+    
+    selectInput("selected_player", "Select Player", choices = player_choices)
+  })
+  
+  # Reactive function to fetch rebound data and include player names and numbers
+  get_rebound_data <- reactive({
+    req(input$selected_game, input$rebound_type, input$playerName)  # Ensure playerName is included as a required input
+    
+    selected_game <- input$selected_game
+    selected_player_name <- input$playerName  # Get the selected player's name
+    
+    # Get the player number based on the selected player's name
+    if (selected_player_name != "All Players") {
+      selected_player_number <- players %>%
+        filter(name == selected_player_name) %>%
+        pull(number)  # Get the player number
+    }
+    
+    # Get the game date
+    selected_game_date <- NULL
+    if (selected_game != "All Games") {
+      selected_game_date <- strsplit(selected_game, " - ")[[1]][1]
+      selected_game_date <- as.Date(selected_game_date, format = "%Y-%m-%d")
+    }
+    
+    con <- dbConnect(RPostgres::Postgres(),
+                     dbname = "ps1",
+                     user = "pythoncon",
+                     password = "password",
+                     host = "18.217.248.114",
+                     port = "5432")
+    
+    # Modify query to filter by 'Lindenwood' team or NULL event_team
+    query <- "SELECT event_person AS number, event, event_x, event_y, off_def, game_date, event_team
+            FROM w_basketball_game_chart_t 
+            WHERE event = 'Rebound' AND (event_team = 'Lindenwood' OR event_team is NULL)"
+    
+    df_rebounds <- dbGetQuery(con, query)
+    dbDisconnect(con)
+    
+    # Check for NA values in game_date column and filter out
+    df_rebounds <- df_rebounds %>%
+      filter(!is.na(game_date))
+    
+    # Filter by selected game date if specified
+    if (!is.null(selected_game_date)) {
+      df_rebounds <- df_rebounds %>% filter(game_date == selected_game_date)
+    }
+    
+    # Filter by rebound type
+    if (input$rebound_type == "Defensive Rebounds") {
+      df_rebounds <- df_rebounds %>% filter(off_def == "Defensive")
+    } else if (input$rebound_type == "Offensive Rebounds") {
+      df_rebounds <- df_rebounds %>% filter(off_def == "Offensive")
+    }
+    
+    # If "All Players" is selected, do not filter by player number
+    if (selected_player_name != "All Players") {
+      df_rebounds <- df_rebounds %>% filter(number == selected_player_number)
+    }
+    
+    # Convert number columns to character for both dataframes to avoid type mismatch
+    df_rebounds$number <- as.character(df_rebounds$number)
+    players$number <- as.character(players$number)  # Assuming `players` is a dataframe with 'number' and 'name' columns
+    
+    # Join with the players table to get player names
+    df_rebounds <- df_rebounds %>%
+      left_join(players, by = "number") %>%
+      filter(!is.na(name))  # Ensure only players with names are included
+    
+    
+    return(df_rebounds)
+  })
+  
+  
+  
+  
+  # Rebounding court plot rendering
+  output$reboundCourt <- renderPlot({
+    df_rebounds <- get_rebound_data()
+    
+    if (nrow(df_rebounds) == 0) {
+      return(plot(1, ylim = c(-30, 30), xlim = c(-50, 50), type = 'n', yaxs = 'i', xaxs = 'i', ylab = '', xlab = '', axes = F, asp = 1))
+    }
+    
+    # Fix made_miss to ensure consistent naming
+    df_rebounds$off_def <- factor(df_rebounds$off_def, levels = c("Defensive", "Offensive"))
+    
+    # Draw the basketball court using base R plotting
+    par(mai = c(0, 0, 0, 0))
+    plot(1, ylim = c(-30, 30), xlim = c(-50, 50), type = 'n', yaxs = 'i', xaxs = 'i', ylab = '', xlab = '', axes = F, asp = 1)
+    
+    # Out of bounds
+    rect(xleft = -47, ybottom = -25, xright = 47, ytop = 25, border = "black", lwd = 2)
+    
+    # Half-court line
+    segments(0, -25, 0, 25, col = "black", lwd = 2)
+    
+    # Center circle
+    symbols(x = 0, y = 0, circles = 6, inches = FALSE, add = TRUE, fg = "black", lwd = 2)
+    
+    # Backboard
+    segments(-43, 3, -43, -3, col = "black", lwd = 2)
+    segments(43, 3, 43, -3, col = "black", lwd = 2)
+    
+    # Paint area
+    rect(-47, -7.5, -28, 7.5, border = "black", lwd = 2)
+    rect(28, -7.5, 47, 7.5, border = "black", lwd = 2)
+    
+    # Free throw circles
+    curve(sqrt(6^2 - (x + 28)^2), from = -28, to = -22, add = TRUE, col = "black", lwd = 2)
+    curve(-sqrt(6^2 - (x + 28)^2), from = -28, to = -22, add = TRUE, col = "black", lwd = 2)
+    curve(sqrt(6^2 - (x - 28)^2), from = 22, to = 28, add = TRUE, col = "black", lwd = 2)
+    curve(-sqrt(6^2 - (x - 28)^2), from = 22, to = 28, add = TRUE, col = "black", lwd = 2)
+    
+    # Hoops
+    symbols(x = -41.75, y = 0, circles = 1.5/2, inches = FALSE, add = TRUE, fg = "black", lwd = 2)  # Left hoop
+    symbols(x = 41.75, y = 0, circles = 1.5/2, inches = FALSE, add = TRUE, fg = "black", lwd = 2)   # Right hoop
+    
+    # 3-point lines
+    segments(-47, -21.65625, -37, -21.65625, col = "black", lwd = 2)
+    segments(-47, 21.65625, -37, 21.65625, col = "black", lwd = 2)
+    
+    segments(47, -21.65625, 37, -21.65625, col = "black", lwd = 2)
+    segments(47, 21.65625, 37, 21.65625, col = "black", lwd = 2)
+    
+    # 3-point arcs (fix NaNs by limiting the x range)
+    curve(sqrt(22.14583^2 - (x + 41.75)^2), from = -37, to = -19.60417, add = TRUE, col = "black", lwd = 2)
+    curve(-sqrt(22.14583^2 - (x + 41.75)^2), from = -37, to = -19.60417, add = TRUE, col = "black", lwd = 2)
+    
+    curve(sqrt(22.14583^2 - (x - 41.75)^2), from = 37, to = 19.60417, add = TRUE, col = "black", lwd = 2)
+    curve(-sqrt(22.14583^2 - (x - 41.75)^2), from = 37, to = 19.60417, add = TRUE, col = "black", lwd = 2)
+    # Plot rebound points
+    points(df_rebounds$event_x, df_rebounds$event_y, col = ifelse(df_rebounds$off_def == "Defensive", "black", "gold3"), pch = 19, cex = 1.5)
+    
+    # Add legend for rebound types
+    legend("topright", legend = c("Defensive Rebound", "Offensive Rebound"), 
+           fill = c("black", "gold3"), title = "Rebound Type", bty = "n", cex = 1.0)
+  }, bg = "transparent")
+  
+  
+  # Rebounding stats table rendering
+  output$reboundingStatsTable <- renderDT({
+    df_rebounds <- get_rebound_data()  # Fetch rebound data from the reactive function
+    
+    if (nrow(df_rebounds) == 0) return(NULL)
+    
+    # Aggregate rebound statistics per player
+    rebound_stats <- df_rebounds %>%
+      group_by(number, name) %>%
+      summarize(
+        total_rebounds = n(),
+        offensive_rebounds = sum(off_def == "Offensive"),
+        defensive_rebounds = sum(off_def == "Defensive"),
+        .groups = "drop"  # Ensure no grouping remains
+      )
+    
+    # Ensure 'number' is treated as numeric for sorting
+    rebound_stats$number <- as.numeric(as.character(rebound_stats$number))
+    
+    # Handle "All Players" case by calculating team totals
+    if (input$playerName == "All Players") {
+      # Calculate team totals
+      team_totals <- rebound_stats %>%
+        summarise(
+          number = NA_real_,  # Ensure that 'number' is numeric (NA_real_ is a numeric NA)
+          name = "Team Total",
+          offensive_rebounds = sum(offensive_rebounds, na.rm = TRUE),
+          defensive_rebounds = sum(defensive_rebounds, na.rm = TRUE),
+          total_rebounds = sum(total_rebounds, na.rm = TRUE)
+        )
+      
+      # Append team totals to the player statistics
+      rebound_stats <- bind_rows(rebound_stats, team_totals)
+    }
+    
+    # Sort by player number and ensure 'Team Total' is at the bottom
+    rebound_stats <- rebound_stats %>%
+      arrange(ifelse(is.na(number), 1, number))  # Sort by player number and push 'NA' (team total) to the bottom
+    
+    # Render the table
+    datatable(rebound_stats, 
+              options = list(dom = 't', 
+                             paging = FALSE, 
+                             searching = FALSE, 
+                             ordering = TRUE,  # Enable ordering by column
+                             order = list(list(0, 'asc'))),  # Default order: sort by player number
+              rownames = FALSE, 
+              colnames = c("Player Number", "Player Name", "Total Rebounds", "Offensive Rebounds", "Defensive Rebounds"))
+  })
 }
 
 
